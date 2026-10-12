@@ -152,7 +152,7 @@ CONTENT = [
     ("Normal", "Triângulo esquerdo: (topo, base, esquerda), cor vermelha (0,90; 0,16; 0,22; 1). Triângulo direito: (topo, direita, base), cor amarelo-dourada (1,00; 0,78; 0,12; 1). Como os dois triângulos formam um único corpo rígido, eles são agrupados em um mesmo shape e compartilham a mesma transformação de modelagem, sendo desenhados em uma única chamada."),
 
     ("Heading2", "4.3 Rabiola (2 triângulos)"),
-    ("Normal", "A rabiola é composta por dois laços triangulares cor-de-laranja, dispostos ao longo de uma linha fina implícita que desce da ponta inferior da pipa. Cada laço é um único triângulo com o pivô no topo (0,0) e corpo em (±0,08; -0,18), ambos na cor laranja (1,00; 0,50; 0,00; 1). Os laços são empilhados verticalmente, com pivôs em (0; -0,50) e (0; -0,72), o que sugere a linha sem precisar desenhar uma primitiva de reta. Cada laço é um shape separado, pois possui transformação própria."),
+    ("Normal", "A rabiola é composta por dois laços triangulares cor-de-laranja (1,00; 0,50; 0,00; 1), inclinados para a direita como bandeirolas. Cada laço é um único triângulo com o pivô no vértice superior (0,0) e os demais vértices em (0,21; -0,155) e (0,04; -0,25). O primeiro laço é amarrado logo abaixo da ponta inferior da pipa, em (0; -0,62); o segundo é amarrado no ponto médio da aresta inferior do primeiro, em (0,125; -0,2025) nas coordenadas locais do laço A, formando uma cadeia. Cada laço é um shape separado, pois possui transformação própria."),
 
     ("Heading1", "5. Pipeline de renderização"),
     ("Normal", "O pipeline usa um único programa (mesmo par de shaders) para os quatro triângulos, com topology 'triangle-list' e cullMode 'none'. Como a cena é plana e coplanar (z = 0), o teste de profundidade é desabilitado (depth: false), e a sobreposição é definida apenas pela ordem de desenho (pipa primeiro, laços da rabiola depois). Cada triângulo recebe sua cor por vértice (atributo de cor no vertex buffer), conforme o padrão das aulas."),
@@ -166,9 +166,9 @@ CONTENT = [
     ("Normal", "A pipa translada no plano e gira levemente em torno de Z:"),
     ("Code", "M_pipa = T(x(t), y(t), 0) · Rz(tilt(t)) · S(1, 1, 1)\nx(t)   = 0,06 · sin(0,5 · w · t)        (deriva lateral suave)\ny(t)   = 0,55 · sin(w · t)              (subida e descida), w = 2,2 rad/s\ntilt(t)= 0,18 · sin(w · t + 0,6)        (leve rotação)"),
     ("Heading2", "6.2 Matriz de modelagem dos laços da rabiola (parentesco)"),
-    ("Normal", "Cada laço herda a transformação da pipa e acrescenta um pivô sobre a linha e a oscilação própria, o que garante um movimento diferente, porém coerente, em relação à pipa:"),
-    ("Code", "M_laco_i = M_pipa · T(0, attachY_i, 0) · Rz(swing_i)\nattachY_i = {-0,50 ; -0,72}\nswing_A  = 0,45·sin(1,4·w·t)        + 0,12·sin(2,7·w·t + 1,0)\nswing_B  = 0,40·sin(1,4·w·t + 1,8)  + 0,15·sin(2,5·w·t + 0,5)"),
-    ("Normal", "As fases e frequências diferentes fazem os dois laços se moverem de maneira distinta; o fato de ambos serem multiplicados por M_pipa garante que acompanhem a pipa, mantendo a coerência do conjunto."),
+    ("Normal", "Os laços formam uma hierarquia: o laço A é filho da pipa e o laço B é filho do laço A. Cada um herda a transformação do pai e acrescenta uma translação até o ponto de amarração e uma oscilação própria, o que garante um movimento diferente, porém coerente, em relação à pipa:"),
+    ("Code", "M_laco_A = M_pipa   · T(0; -0,62; 0)       · Rz(swing_A)\nM_laco_B = M_laco_A · T(0,125; -0,2025; 0) · Rz(swing_B)\nswing_A  = 0,30·sin(1,4·w·t)        + 0,08·sin(2,7·w·t + 1,0)\nswing_B  = 0,30·sin(1,4·w·t + 1,2)  + 0,10·sin(2,5·w·t + 0,5)"),
+    ("Normal", "As fases e frequências diferentes fazem os dois laços se moverem de maneira distinta. Como M_laco_B contém M_laco_A, que por sua vez contém M_pipa, o laço B acumula a oscilação do laço A, como uma corrente: a rabiola acompanha a pipa e ondula de forma progressiva, mantendo a coerência do conjunto."),
 
     ("Heading1", "7. Câmera e acompanhamento parcial"),
     ("Normal", "A câmera é montada com createLookAtMat4, olhando para o plano da cena a partir de z = 1 (convenção right-handed, compatível com a projeção ortográfica da biblioteca). Para acompanhar parcialmente a pipa, a posição vertical da câmera é proporcional (fator 0,4) ao deslocamento vertical da pipa:"),

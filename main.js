@@ -22,7 +22,16 @@ const KITE_LEFT_COLOR = [0.9, 0.16, 0.22, 1.0];
 const KITE_RIGHT_COLOR = [1.0, 0.78, 0.12, 1.0];
 const TAIL_COLOR = [1.0, 0.5, 0.0, 1.0];
 
-const TAIL_ATTACH_YS = [KITE_BOTTOM[1] - 0.05, KITE_BOTTOM[1] - 0.27];
+const TAIL_LOOP = [
+    [0.0, 0.0],
+    [0.21, -0.155],
+    [0.04, -0.25],
+];
+const TAIL_A_ATTACH = [KITE_BOTTOM[0], KITE_BOTTOM[1] - 0.02];
+const TAIL_B_ATTACH = [
+    (TAIL_LOOP[1][0] + TAIL_LOOP[2][0]) / 2,
+    (TAIL_LOOP[1][1] + TAIL_LOOP[2][1]) / 2,
+];
 
 const BOB_FREQUENCY = 2.2;
 const BOB_AMPLITUDE = 0.55;
@@ -76,14 +85,15 @@ class Scene {
     }
 
     /**
-     * Um laço da rabiola é um único triângulo com o pivô no topo (0,0),
-     * de modo que a rotação em Z o faz balançar como um pêndulo.
+     * Um laço da rabiola é um único triângulo, inclinado para a direita como
+     * uma bandeirola, com o pivô no vértice superior (0,0), de modo que a
+     * rotação em Z o faz balançar como um pêndulo.
      */
     createLoop(color) {
         const positions = [
-            0.0, 0.0, 0.0, 1.0,
-            0.08, -0.18, 0.0, 1.0,
-            -0.08, -0.18, 0.0, 1.0,
+            ...TAIL_LOOP[0], 0.0, 1.0,
+            ...TAIL_LOOP[1], 0.0, 1.0,
+            ...TAIL_LOOP[2], 0.0, 1.0,
         ];
 
         const colors = [
@@ -115,14 +125,15 @@ class Scene {
     }
 
     /**
-     * Matriz de modelagem de cada laço da rabiola. O laço herda a transformação
-     * da pipa (parentesco) e acrescenta um pivô sobre a linha e uma oscilação
-     * própria, garantindo um movimento diferente, porém coerente, em relação à pipa.
+     * Matriz de modelagem de um laço da rabiola. O laço herda a transformação
+     * do seu pai (parentesco) e acrescenta um pivô no ponto de amarração e uma
+     * oscilação própria, garantindo um movimento diferente, porém coerente.
+     * O laço A é filho da pipa e o laço B é filho do laço A, formando uma cadeia.
      */
-    createTailModel(kiteModel, attachY, swing) {
-        const pivot = createTranslationMat4(0.0, attachY, 0.0);
+    createTailModel(parentModel, attach, swing) {
+        const pivot = createTranslationMat4(attach[0], attach[1], 0.0);
         const rotate = createRotationZMat4(swing);
-        return multiplyMat4(kiteModel, multiplyMat4(pivot, rotate));
+        return multiplyMat4(parentModel, multiplyMat4(pivot, rotate));
     }
 
     /**
@@ -164,13 +175,13 @@ class Scene {
 
         const { y, model: kiteModel } = this.createKiteModel(time);
 
-        const swingA = 0.45 * Math.sin(1.4 * BOB_FREQUENCY * time)
-            + 0.12 * Math.sin(2.7 * BOB_FREQUENCY * time + 1.0);
-        const swingB = 0.40 * Math.sin(1.4 * BOB_FREQUENCY * time + 1.8)
-            + 0.15 * Math.sin(2.5 * BOB_FREQUENCY * time + 0.5);
+        const swingA = 0.30 * Math.sin(1.4 * BOB_FREQUENCY * time)
+            + 0.08 * Math.sin(2.7 * BOB_FREQUENCY * time + 1.0);
+        const swingB = 0.30 * Math.sin(1.4 * BOB_FREQUENCY * time + 1.2)
+            + 0.10 * Math.sin(2.5 * BOB_FREQUENCY * time + 0.5);
 
-        const tailAModel = this.createTailModel(kiteModel, TAIL_ATTACH_YS[0], swingA);
-        const tailBModel = this.createTailModel(kiteModel, TAIL_ATTACH_YS[1], swingB);
+        const tailAModel = this.createTailModel(kiteModel, TAIL_A_ATTACH, swingA);
+        const tailBModel = this.createTailModel(tailAModel, TAIL_B_ATTACH, swingB);
 
         const view = this.createViewMatrix(y);
         const projection = this.createProjectionMatrix();

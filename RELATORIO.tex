@@ -1,0 +1,323 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{caption}
+\usepackage{float}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{kitered}{rgb}{0.90,0.16,0.22}
+\definecolor{kiteyellow}{rgb}{1.00,0.78,0.12}
+\definecolor{tailorange}{rgb}{1.00,0.50,0.00}
+\definecolor{sky}{rgb}{0.53,0.81,0.92}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{gray!40},
+    breaklines=true,
+    columns=fullflexible,
+    keepspaces=true,
+    showstringspaces=false,
+    xleftmargin=4pt,
+    xrightmargin=4pt,
+    literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+             {ã}{{\~a}}1 {õ}{{\~o}}1 {ç}{{\c{c}}}1 {â}{{\^a}}1 {ê}{{\^e}}1
+             {·}{{$\cdot$}}1 {→}{{$\rightarrow$}}2
+}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{Relatório: Cena 2D animada de uma pipa em WebGPU}
+\author{Computação Gráfica --- Prof. Marcos Lage (UFF)}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\noindent Base: códigos produzidos em sala, repositório
+\url{https://github.com/mlage/curso-cg}.
+
+\section{Objetivo}
+
+Este trabalho implementa, em WebGPU, uma cena 2D animada de uma pipa voando
+sobre um fundo de céu de cor sólida. A cena é composta exclusivamente por
+\textbf{quatro triângulos} (dois para o corpo da pipa e dois para os laços da
+rabiola), sem texturas, imagens externas ou bibliotecas de renderização. A
+animação é contínua, via \code{requestAnimationFrame}, e utiliza matrizes de
+modelagem, câmera (\emph{view}) e projeção ortográfica, além de shaders WGSL,
+\emph{vertex buffers} e \emph{uniform buffers}.
+
+\section{Fundamentação e reuso do código de sala}
+
+A implementação parte dos exemplos das aulas de Transformações (05), Câmera
+(06) e Projeções (07) do repositório da disciplina. A biblioteca compartilhada
+foi reaproveitada sem alterações:
+
+\begin{itemize}
+    \item \code{lib/webgpu.js}: wrapper \code{GPUCanvas}, que encapsula
+          dispositivo, contexto, uniforms e desenho;
+    \item \code{lib/utils.js}: matemática de matrizes $4\times4$ em ordem
+          \emph{column-major}.
+\end{itemize}
+
+A estrutura da cena (arquivo \code{main.js} com as classes \code{Scene} e
+\code{Main}, shaders em arquivos \code{.vert.js}/\code{.frag.js} e o par
+\code{main.html}/\code{main.css}) foi mantida idêntica à das aulas, mudando
+apenas a geometria, as transformações e a animação.
+
+\section{Estrutura do projeto}
+
+\begin{lstlisting}
+pipa-webgpu/
+  main.html      → canvas #glcanvas e carregamento do módulo main.js
+  main.css       → estilo do canvas (1024 x 768)
+  main.js        → classes Scene e Main (geometria, matrizes, animação)
+  pipa.vert.js   → shader WGSL de vértice
+  pipa.frag.js   → shader WGSL de fragmento
+  lib/utils.js   → matrizes (translação, escala, rotação, lookAt, ortho)
+  lib/webgpu.js  → wrapper do WebGPU (program, shape, uniform, draw)
+\end{lstlisting}
+
+Nenhuma primitiva diferente de triângulos é utilizada e não há dependências
+externas.
+
+\section{Modelagem da cena}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=3.2]
+    \fill[sky!35] (-0.75,-1.25) rectangle (0.75,0.55);
+    \draw[gray!50,->] (-0.7,0) -- (0.7,0) node[right,black] {$x$};
+    \draw[gray!50,->] (0,-1.2) -- (0,0.52) node[above,black] {$y$};
+
+    \fill[kitered]    (0,0.4) -- (0,-0.6) -- (-0.4,0) -- cycle;
+    \fill[kiteyellow] (0,0.4) -- (0.4,0) -- (0,-0.6) -- cycle;
+
+    \fill[tailorange] (0,-0.62) -- (0.21,-0.775) -- (0.04,-0.87) -- cycle;
+    \fill[tailorange] (0.125,-0.8225) -- (0.335,-0.9775) -- (0.165,-1.0725) -- cycle;
+
+    \fill (0,0.4) circle (0.012);
+    \node[right,font=\scriptsize] at (0,0.4) {$(0;\ 0{,}4)$};
+    \fill (-0.4,0) circle (0.012);
+    \node[above left,font=\scriptsize] at (-0.4,0) {$(-0{,}4;\ 0)$};
+    \fill (0.4,0) circle (0.012);
+    \node[above right,font=\scriptsize] at (0.4,0) {$(0{,}4;\ 0)$};
+    \fill (0,-0.6) circle (0.012);
+    \node[left,font=\scriptsize] at (0,-0.6) {$(0;\ -0{,}6)$};
+    \fill (0,-0.62) circle (0.012);
+    \node[left,font=\scriptsize] at (0,-0.68) {pivô A};
+    \fill (0.125,-0.8225) circle (0.012);
+    \node[left,font=\scriptsize] at (0.12,-0.86) {pivô B};
+\end{tikzpicture}
+\caption{Os quatro triângulos da cena em coordenadas de modelo (repouso,
+$t$ tal que todas as oscilações são nulas).}
+\end{figure}
+
+\subsection{Fundo (céu)}
+
+Como a cena admite apenas quatro triângulos, o céu não é uma geometria: ele é a
+cor de limpeza (\code{clearValue}) do \emph{render pass}, definida em
+\code{SKY\_COLOR} como azul-céu $(0{,}53;\ 0{,}81;\ 0{,}92;\ 1)$. Assim, o
+fundo sólido é desenhado sem consumir nenhum dos triângulos disponíveis.
+
+\subsection{Corpo da pipa (2 triângulos)}
+
+A pipa é um losango cortado pela diagonal vertical (topo--base), gerando duas
+metades de cores sólidas: vermelho à esquerda e amarelo à direita. Em
+coordenadas locais (plano $XY$, $z=0$):
+
+\begin{center}
+\begin{tabular}{ll}
+    topo     & $(0{,}0;\ 0{,}4)$ \\
+    esquerda & $(-0{,}4;\ 0{,}0)$ \\
+    direita  & $(0{,}4;\ 0{,}0)$ \\
+    base     & $(0{,}0;\ -0{,}6)$ \\
+\end{tabular}
+\end{center}
+
+Triângulo esquerdo: (topo, base, esquerda), cor $(0{,}90;\ 0{,}16;\ 0{,}22;\ 1)$.
+Triângulo direito: (topo, direita, base), cor $(1{,}00;\ 0{,}78;\ 0{,}12;\ 1)$.
+Como os dois triângulos formam um único corpo rígido, eles são agrupados no
+mesmo \emph{shape}, compartilham a mesma matriz de modelagem e são desenhados
+em uma única chamada.
+
+\subsection{Rabiola (2 triângulos)}
+
+A rabiola é composta por dois laços triangulares laranja
+$(1{,}00;\ 0{,}50;\ 0{,}00;\ 1)$, inclinados para a direita como bandeirolas.
+Cada laço é um único triângulo com o pivô no vértice superior $(0,0)$ e os
+demais vértices em $(0{,}21;\ -0{,}155)$ e $(0{,}04;\ -0{,}25)$. Colocar o
+pivô na origem local faz com que uma rotação em $Z$ balance o laço como um
+pêndulo.
+
+O primeiro laço é amarrado logo abaixo da ponta inferior da pipa, em
+$(0;\ -0{,}62)$. O segundo é amarrado no ponto médio da aresta inferior do
+primeiro, $(0{,}125;\ -0{,}2025)$ nas coordenadas locais do laço A, formando
+uma cadeia. Cada laço é um \emph{shape} separado, pois possui transformação
+própria.
+
+\section{Pipeline de renderização}
+
+O pipeline usa um único programa (mesmo par de shaders) para os quatro
+triângulos, com \code{topology: 'triangle-list'} e \code{cullMode: 'none'}.
+Como a cena é plana ($z=0$), o teste de profundidade é desabilitado
+(\code{depth: false}) e a sobreposição é definida pela ordem de desenho (pipa
+primeiro, laços depois). Cada vértice carrega sua cor no \emph{vertex buffer},
+conforme o padrão das aulas.
+
+O shader de vértice recebe \code{position} (\code{location 0}) e \code{color}
+(\code{location 1}), multiplica a posição pela matriz
+\code{modelViewProjection} do \emph{uniform buffer} e repassa a cor. O shader
+de fragmento apenas retorna a cor interpolada.
+
+\begin{lstlisting}
+struct Uniforms {
+  modelViewProjection : mat4x4f,
+};
+@group(0) @binding(0) var<uniform> uniforms : Uniforms;
+
+@vertex
+fn main(@location(0) position : vec4f,
+        @location(1) color : vec4f) -> VertexOutput {
+  var output : VertexOutput;
+  output.position = uniforms.modelViewProjection * position;
+  output.color = color;
+  return output;
+}
+\end{lstlisting}
+
+São usados três \emph{uniform buffers} distintos (pipa, laço A e laço B), um
+por objeto, cada um com sua própria \emph{bind group}. Isso permite
+transformações independentes dentro do mesmo \emph{render pass}.
+
+\section{Transformações geométricas}
+
+As matrizes são montadas com a biblioteca da disciplina, em ordem
+\emph{column-major}, e combinadas na CPU como
+\[
+    \mathrm{MVP} = P \cdot V \cdot M,
+\]
+no mesmo estilo da aula de Projeções. Nas fórmulas abaixo,
+$\omega = 2{,}2$ rad/s e $t$ é o tempo em segundos.
+
+\subsection{Matriz de modelagem da pipa}
+
+A pipa translada no plano e gira levemente em torno de $Z$:
+\begin{align*}
+    M_{\text{pipa}} &= T\big(x(t),\, y(t),\, 0\big)\cdot R_z\big(\theta(t)\big)\cdot S(1,1,1)\\[2pt]
+    x(t)      &= 0{,}06\,\sin(0{,}5\,\omega t) && \text{(deriva lateral suave)}\\
+    y(t)      &= 0{,}55\,\sin(\omega t)        && \text{(subida e descida)}\\
+    \theta(t) &= 0{,}18\,\sin(\omega t + 0{,}6) && \text{(leve rotação)}
+\end{align*}
+
+A ordem $T\cdot R\cdot S$ garante que a rotação ocorra em torno do centro do
+losango (origem local) antes do deslocamento. A defasagem de $0{,}6$ rad faz a
+inclinação acompanhar a subida/descida com um pequeno atraso, como uma pipa
+reagindo ao vento.
+
+\subsection{Matrizes de modelagem dos laços da rabiola (hierarquia)}
+
+Os laços formam uma hierarquia: o laço A é filho da pipa e o laço B é filho do
+laço A. Cada um herda a transformação do pai e acrescenta uma translação até o
+ponto de amarração e uma oscilação própria:
+\begin{align*}
+    M_A &= M_{\text{pipa}} \cdot T(0;\ -0{,}62;\ 0) \cdot R_z(\varphi_A)\\
+    M_B &= M_A \cdot T(0{,}125;\ -0{,}2025;\ 0) \cdot R_z(\varphi_B)\\[2pt]
+    \varphi_A(t) &= 0{,}30\,\sin(1{,}4\,\omega t) + 0{,}08\,\sin(2{,}7\,\omega t + 1{,}0)\\
+    \varphi_B(t) &= 0{,}30\,\sin(1{,}4\,\omega t + 1{,}2) + 0{,}10\,\sin(2{,}5\,\omega t + 0{,}5)
+\end{align*}
+
+As fases e frequências diferentes fazem os dois laços se moverem de maneira
+distinta da pipa. Como $M_B$ contém $M_A$, que por sua vez contém
+$M_{\text{pipa}}$, o laço B acumula a oscilação do laço A, como uma corrente.
+A rabiola acompanha a pipa e ondula de forma progressiva, mantendo a coerência
+do conjunto.
+
+\section{Câmera e acompanhamento parcial}
+
+A câmera é montada com \code{createLookAtMat4}, olhando para o plano da cena a
+partir de $z=1$ (convenção \emph{right-handed}). Para acompanhar parcialmente
+a pipa, sua altura é uma fração $k = 0{,}4$ do deslocamento vertical da pipa:
+\[
+    \text{eye} = (0,\ k\,y(t),\ 1),\qquad
+    \text{at}  = (0,\ k\,y(t),\ 0),\qquad
+    \text{up}  = (0,\ 1,\ 0).
+\]
+
+Na tela, a pipa aparece então com deslocamento vertical
+$(1-k)\,y(t) = 0{,}6\,y(t)$. Como $0 < k < 1$, a câmera segue apenas parte do
+movimento: a pipa continua percorrendo a tela, preservando a percepção de
+movimento, em vez de ficar fixa no centro ($k=1$) ou com a câmera parada
+($k=0$).
+
+\section{Projeção ortográfica}
+
+A projeção é ortográfica, com o aspecto calculado a partir das dimensões do
+canvas ($1024\times768$). A meia-altura do volume de visão é $1{,}5$ e a
+profundidade é mapeada para o intervalo $[0,1]$ do WebGPU:
+\[
+    a = \frac{1024}{768} \approx 1{,}333,\qquad
+    P = \mathrm{Ortho}\big(-1{,}5a,\ 1{,}5a,\ -1{,}5,\ 1{,}5,\ 0{,}1,\ 10\big).
+\]
+
+Por ser ortográfica, a projeção não altera o tamanho dos objetos com a
+distância, o que é adequado para uma cena 2D. Todos os vértices ficam em
+$z=0$, a uma distância $1$ da câmera, e são mapeados para a profundidade
+$(1-0{,}1)/(10-0{,}1) \approx 0{,}09 \in [0,1]$. Em $X$ e $Y$, os pontos da pipa e
+da rabiola permanecem dentro de $[-1,1]$ ao longo de toda a animação, ou seja,
+sem recorte.
+
+\section{Animação e laço principal}
+
+O laço de animação segue o padrão da disciplina. A cada quadro,
+\code{Main.draw()} inicia o \emph{pass} (\code{gpu.start()}) e a cena
+recalcula as matrizes, atualiza os \emph{uniform buffers} e emite três
+desenhos (pipa, laço A e laço B). Em seguida o \emph{pass} é finalizado
+(\code{gpu.finish()}) e a função se reagenda com \code{requestAnimationFrame}.
+O tempo é lido de \code{performance.now()} em segundos, de modo que as funções
+senoidais produzam um voo contínuo e independente da taxa de quadros.
+
+\begin{lstlisting}
+draw() {
+    this.gpu.start();
+    this.scene.draw(this.gpu);
+    this.gpu.finish();
+    requestAnimationFrame(this.draw.bind(this));
+}
+\end{lstlisting}
+
+\section{Como executar}
+
+O WebGPU exige que a página seja servida por HTTP (não funciona via
+\code{file://}). Duas opções:
+
+\begin{itemize}
+    \item VS Code com a extensão Live Server (recomendação da disciplina),
+          abrindo \code{main.html};
+    \item ou, no diretório do projeto, \code{python3 -m http.server 8000} e
+          acessar \url{http://localhost:8000/main.html} em um navegador com
+          suporte a WebGPU (Chrome/Edge recentes).
+\end{itemize}
+
+\section{Conclusão}
+
+A cena atende a todos os requisitos. Ela é composta por exatamente quatro
+triângulos (dois no corpo da pipa e dois nos laços da rabiola), sem texturas
+ou bibliotecas externas. Usa modelagem, câmera e projeção ortográfica por
+matrizes. A pipa sobe e desce com leve rotação, os laços da rabiola se movem
+de forma diferente porém coerente graças à hierarquia de transformações, e a
+câmera acompanha parcialmente o movimento vertical. A implementação reutiliza
+diretamente a infraestrutura de WebGPU, WGSL e matemática produzida em sala.
+
+\end{document}

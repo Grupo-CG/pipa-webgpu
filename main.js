@@ -59,7 +59,8 @@ class Scene {
 
     /**
      * A pipa é um losango cortado pela diagonal vertical: dois triângulos,
-     * a metade esquerda (vermelho vivo) e a metade direita (amarelo brilhante).
+     * a metade esquerda vermelha e a metade direita amarela.
+     * Como é uma cena 2D (Plano XY), as dimensões do eixo Z são zeradas.
      */
     createKite() {
         const positions = [
@@ -85,8 +86,9 @@ class Scene {
     }
 
     /**
-     * Um laço da rabiola é um único triângulo, inclinado para a direita como
-     * uma bandeirola, com o pivô no vértice superior (0,0), de modo que a
+     * Cada laço (loop, que não vem de for, mas de um laço físico)
+     * da rabiola é um único triângulo, inclinado para a direita, 
+     * com o pivô no vértice superior (0,0), de modo que a
      * rotação em Z o faz balançar como um pêndulo.
      */
     createLoop(color) {
